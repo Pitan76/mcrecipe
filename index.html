@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>pitan76 mcrecipe list</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background-color: #C6C6C6;
+    }
+    h1 {
+      margin: 10px;
+      font-size: 24px;
+    }
+    img {
+      max-width: 200px;
+      margin: 4px 16px;
+    }
+  </style>
+</head>
+<body>
+  <div id="recipes-container">読み込み中...</div>
+
+  <script>
+    const repo = { owner: 'Pitan76', name: 'mcrecipe' };
+    const CACHE_KEY = 'mcrecipe_cache';
+    const CACHE_TTL = 1000 * 60 * 60 * 24; // 24時間
+
+    const loadFromCache = () => {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (!cached) return null;
+
+      try {
+        const { timestamp, data } = JSON.parse(cached);
+        if (Date.now() - timestamp < CACHE_TTL) return data;
+        return null;
+      } catch {
+        return null;
+      }
+    };
+
+    const saveToCache = (data) => {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({
+        timestamp: Date.now(),
+        data
+      }));
+    };
+
+    const fetchRepoData = async () => {
+      const rootRes = await fetch(`https://api.github.com/repos/${repo.owner}/${repo.name}/contents/`);
+      if (!rootRes.ok) throw new Error('API rate limit or fetch error');
+      const rootData = await rootRes.json();
+      const dirs = rootData.filter(item => item.type === 'dir');
+
+      const result = [];
+
+      for (const dir of dirs) {
+        const dirRes = await fetch(dir.url);
+        if (!dirRes.ok) continue;
+        const files = await dirRes.json();
+        const images = files
+          .filter(f => f.type === 'file' && f.name.endsWith('.png'))
+          .map(f => ({ name: f.name, url: f.download_url }));
+        result.push({ title: dir.name, images });
+      }
+
+      return result;
+    };
+
+    const renderRecipes = (recipes) => {
+      const container = document.getElementById('recipes-container');
+      container.innerHTML = '';
+
+      for (const { title, images } of recipes) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'recipe-container';
+
+        const h1 = document.createElement('h1');
+        h1.textContent = title;
+        wrapper.appendChild(h1);
+
+        const imgContainer = document.createElement('div');
+        for (const imgData of images) {
+          const img = document.createElement('img');
+          img.src = imgData.url;
+          img.alt = imgData.name;
+          imgContainer.appendChild(img);
+        }
+
+        wrapper.appendChild(imgContainer);
+        container.appendChild(wrapper);
+      }
+    };
+
+    const main = async () => {
+      const cache = loadFromCache();
+      if (cache) {
+        renderRecipes(cache);
+        return;
+      }
+
+      try {
+        const data = await fetchRepoData();
+        saveToCache(data);
+        renderRecipes(data);
+      } catch (e) {
+        const container = document.getElementById('recipes-container');
+        container.innerHTML = '<p>GitHub APIの制限に達しました。しばらくしてから再読み込みしてください。</p>';
+      }
+    };
+
+    main();
+  </script>
+</body>
+</html>
